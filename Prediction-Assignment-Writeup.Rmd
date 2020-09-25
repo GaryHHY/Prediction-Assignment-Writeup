@@ -1,0 +1,143 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Haoyi He"
+date: "9/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,warning = FALSE)
+```
+
+## Background
+
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how _much_ of a particular activity they do, but they rarely quantify _how well they do it_. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+The training data for this project are available here:
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here:
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+The data for this project come from this source: [http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har). If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+
+## Data Processing
+
+Packages being used.
+
+```{r load_package}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+```
+First, download the traning and testing dataset from Link provided above.
+
+```{r download_data}
+set.seed(9898)
+
+trainurl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testurl  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train_data <- read.csv(url(trainurl), strip.white = TRUE, na.strings = c("NA",""))
+test_data  <- read.csv(url(testurl),  strip.white = TRUE, na.strings = c("NA",""))
+
+dim(train_data)
+```
+
+Then, Splitting the training data into traing set(70%) and validataion set(30%).
+
+```{r split_data}
+in_train  <- createDataPartition(train_data$classe, p=.7, list=FALSE)
+train_set <- train_data[ in_train, ]
+test_set  <- train_data[-in_train, ]
+
+dim(train_set)
+dim(test_set)
+```
+
+Next, clean up the varaibles with no variance.
+
+```{r cleanData}
+nearzerodata <- nearZeroVar(train_data)
+train_set_final <- train_set[,-nearzerodata]
+test_set_final <- test_set[,-nearzerodata]
+
+dim(train_set_final)
+dim(test_set_final)
+```
+
+By looking at the dataset, it appears that some of the column have NA values mostly, we can trim the dataset further more.
+
+```{r trimdata}
+train_set_final <- train_set_final[, colSums(is.na(train_set_final)) == 0]
+test_set_final <- test_set_final[, colSums(is.na(test_set_final)) == 0]
+
+# removed non related columns
+train_set_final <- train_set_final[,-(1:5)]
+test_set_final <- test_set_final[,-(1:5)]
+```
+
+From this point, we can use the trimed data to build models.
+
+## Data Modeling
+
+use K-fold Cross Validation for 3 iterations while traning the dataset.
+
+```{r modelfit}
+# Random forest model
+set.seed(9898)
+fit_rf  <- train( classe ~.,
+                   data = train_set_final,
+                   method = "rf",
+                   trControl = trainControl(method="cv", number=3)
+                   )
+
+# Generalized boosted model
+set.seed(9898)
+fit_bm <- train( classe ~.,
+                  data = train_set_final,
+                  method = "gbm",
+                  trControl = trainControl(method="cv", number=3),
+                  verbose = FALSE)
+
+```
+
+Build predictions.
+
+```{r comparemodel}
+prf = predict(fit_rf,test_set_final)
+pbm = predict(fit_bm,test_set_final)
+
+```
+Validating model accuracy
+
+```{r validatemodel}
+#confusion matrix for Random forest model
+confusionMatrix(prf,as.factor(test_set_final$classe))
+#confusion matrix for Generalized boosted model
+confusionMatrix(pbm,as.factor(test_set_final$classe))
+```
+
+As we see from above, **random forest model** has better accuracy(0.998) compare to **generalized boosted model**(0.9885).
+
+## Predict test cases
+
+Finally, predict the test cases based on testing dataset by using random forest model.
+
+```{r predict}
+test_data_final <- test_data[,-nearzerodata]
+test_data_final <- test_data_final[, colSums(is.na(test_data_final)) == 0]
+test_data_final <- test_data_final[,-(1:5)]
+
+# predict the test dateset
+finalpredict = predict(fit_rf,test_data_final)
+
+print(finalpredict)
+```
